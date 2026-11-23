@@ -4,7 +4,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from kino import make_client, model_name, pick
+from kino import bind_model_kind, make_client, model_name, pick
 
 
 def _rows() -> list[dict]:
@@ -31,7 +31,8 @@ def main() -> None:
     must_passed = 0
     slipped = 0
     for item in queries:
-        outcome, ids = pick(client, model, item["query"], films)
+        with bind_model_kind("local"):
+            outcome, ids = pick(client, model, item["query"], films)
         counts[outcome] += 1
         slipped += sum(1 for film_id in ids if str(film_id) not in known)
         expect = item.get("expect") or {}
