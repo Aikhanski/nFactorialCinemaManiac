@@ -13,6 +13,8 @@ def main() -> None:
             if line.strip():
                 rows.append(json.loads(line))
     outcomes = Counter(row.get("outcome") for row in rows)
+    queries = [row for row in rows if row.get("step", "choice") != "filters"]
+    filters = len(rows) - len(queries)
     prompt_tokens = 0
     completion_tokens = 0
     usd = 0.0
@@ -25,6 +27,8 @@ def main() -> None:
         if isinstance(price, (int, float)):
             usd += price
     print(f"строк: {len(rows)}")
+    print(f"запросов: {len(queries)}")
+    print(f"вызовов фильтров: {filters}")
     if outcomes:
         print("исходы: " + ", ".join(f"{name} {count}" for name, count in sorted(outcomes.items(), key=lambda item: str(item[0]))))
     else:

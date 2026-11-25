@@ -4,7 +4,7 @@ import json
 
 import openai
 
-from kino import Choice, FilmPick, films_for_query, pick, required_country, run_models
+from kino import Choice, FilmPick, Filters, films_for_query, pick, required_country, run_models
 
 
 CATALOG = [
@@ -59,9 +59,10 @@ class _Completion:
 
 
 class RecordingClient:
-    def __init__(self, parsed=None, error=None):
+    def __init__(self, parsed=None, error=None, filters=None):
         self.parsed = parsed
         self.error = error
+        self.filters = Filters() if filters is None else filters
         self.calls = []
         self.chat = self
         self.completions = self
@@ -70,6 +71,9 @@ class RecordingClient:
         self.calls.append(kwargs)
         if self.error is not None:
             raise self.error
+        schema = kwargs.get("response_format")
+        if schema is not None and "max_minutes" in getattr(schema, "model_fields", {}):
+            return _Completion(self.filters)
         return _Completion(self.parsed)
 
 
@@ -78,7 +82,11 @@ def _both(parsed):
 
 
 def _titles(client: RecordingClient) -> str:
-    return client.calls[0]["messages"][0]["content"]
+    for call in client.calls:
+        schema = call.get("response_format")
+        if schema is not None and "picks" in getattr(schema, "model_fields", {}):
+            return call["messages"][0]["content"]
+    return ""
 
 
 def test_kazakh_request_drops_japan(tmp_path, monkeypatch, capsys):
@@ -149,7 +157,7 @@ def test_missing_country_returns_nothing(tmp_path, monkeypatch, capsys):
     outcome, ids = pick(client, "local-model", "Казахстанский семейный фильм", only_japan)
     assert outcome == "no_match"
     assert ids == []
-    assert client.calls == []
+    assert len(client.calls) == 1
     assert capsys.readouterr().out == ""
 
 
@@ -159,8 +167,8 @@ def test_alien_id_is_rejected(tmp_path, monkeypatch):
     outcome, ids = pick(RecordingClient(parsed), "local-model", "что посмотреть вечером", CATALOG)
     assert outcome == "invalid"
     assert ids == []
-    row = json.loads((tmp_path / "calls.jsonl").read_text(encoding="utf-8"))
-    assert "нет-такого" in row["rejected"]
+    rows = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert any("нет-такого" in (row.get("rejected") or []) for row in rows)
 
 
 def test_wrong_country_from_model_is_dropped(tmp_path, monkeypatch, capsys):
@@ -210,6 +218,7 @@ def test_both_models_get_the_same_query_and_catalog(tmp_path, monkeypatch):
     query = "Американская комедия"
     run_models(query, CATALOG, [("local", local, "local-model"), ("cloud", cloud, "cloud-model")])
     assert local.calls[0]["messages"] == cloud.calls[0]["messages"]
+    assert _titles(local) == _titles(cloud)
     prompt = _titles(local)
     assert query in prompt
     assert "Матрица" in prompt

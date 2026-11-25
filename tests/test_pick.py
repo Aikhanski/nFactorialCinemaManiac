@@ -1,6 +1,6 @@
 """Контракт pick на заглушке. Журнал пишется во временный каталог, не в сдаваемый calls.jsonl."""
 
-from kino import Choice, FilmPick, pick
+from kino import Choice, FilmPick, Filters, pick
 
 
 FILMS = [
@@ -55,6 +55,9 @@ class _Completions:
         self.completion = completion
 
     def parse(self, **kwargs):
+        schema = kwargs.get("response_format")
+        if schema is not None and "max_minutes" in getattr(schema, "model_fields", {}):
+            return _Completion(_Message(parsed=Filters()))
         return self.completion
 
 
@@ -87,6 +90,8 @@ def test_alien_id_invalidates_whole_answer(tmp_path, monkeypatch):
     assert ids == []
     journal = (tmp_path / "calls.jsonl").read_text(encoding="utf-8")
     assert "f-001999" in journal
+    assert '"step": "filters"' in journal
+    assert '"step": "choice"' in journal
 
 
 def test_duplicate_is_shown_once(tmp_path, monkeypatch, capsys):
